@@ -1,0 +1,62 @@
+﻿@page "/Basket"
+@inject UserStateContainer userState
+@inject NavigationManager nav
+@inject IJSRuntime JS
+
+@using static H6_Site.GlobalObjects;
+
+<h3>Basket List</h3>
+@if (userState.BasketList.Count > 0)
+{
+    <div style="max-width:450px; padding-top:5px;" id="BasketOrder">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Price</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (ItemModel m in userState.BasketList)
+                {
+                    <tr style="cursor:text;">
+                        <td>@m.ItemName</td>
+                        <td>@m.Price DKK</td>
+                    </tr>
+                }
+            </tbody>
+            
+        </table>
+
+        <footer class="modal-footer" style="text-decoration:underline;">
+            Sum @userState.BasketList.Sum(x => x.Price) DKK
+        </footer>
+    </div>
+    <div>
+        <input value="Purchase" type="button" class="btn-primary" @onclick="async e => await On_Btn1Click(e)" />
+    </div>
+}
+else
+{
+    <div>Basket is Empty</div>
+}
+
+    @code {
+
+protected override async Task OnInitializedAsync()
+    {
+        if (!userState.UserLoggedIn)
+        {
+            await InvokeAsync(() => nav.NavigateTo(""));
+        }
+    }
+
+    protected async Task On_Btn1Click(MouseEventArgs e)
+    {
+        await userState.CurrentUser.SendReceit(userState.BasketList);
+        userState.BasketList.Clear();
+
+        userState.SetUser(userState.CurrentUser);
+        await InvokeAsync(StateHasChanged);
+    }
+    }

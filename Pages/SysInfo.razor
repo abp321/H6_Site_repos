@@ -1,0 +1,24 @@
+﻿@page "/SysInfo"
+@inject System.Diagnostics.Stopwatch watch
+@inject NavigationManager nav
+@inject UserStateContainer userState
+
+@if (userState.CurrentUser.Admin && userState.UserLoggedIn)
+{
+    <div><SysPanel /></div>
+}
+else
+{
+    <h3>Unauthorized</h3>
+}
+
+@code
+{
+    protected override async Task OnInitializedAsync()
+    {
+        if (!userState.CurrentUser.Admin)
+        {
+            await InvokeAsync(() => nav.NavigateTo(""));
+        }
+    }
+}

@@ -1,0 +1,185 @@
+﻿@inject UpdateInfo iupdate
+@implements IAsyncDisposable
+@inject System.Diagnostics.Stopwatch watch
+@inject UserStateContainer userState
+@using static GlobalObjects;
+@using AbpLib.Web;
+@using AbpLib;
+@using Blazor.Extensions.Canvas
+@using Blazor.Extensions;
+@using Blazor.Extensions.Canvas.Canvas2D;
+
+@if (iupdate.AllValues != null && iupdate.TodayValues != null)
+{
+    <table>
+        <tr>
+            <td>
+                <div>
+                    <span style="display:inline-block;">
+                        <BECanvas Width="320" Height="250" @ref="CanvasTotalTimePct"></BECanvas>
+                    </span>
+                    <span style="display:inline-block; padding-left:100px;">
+                        <BECanvas Width="320" Height="250" @ref="CanvasTodayTimePct"></BECanvas>
+                    </span>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <div>
+        <table class="table table-borderless">
+            <tr>
+                <td>
+                    <div>Avg/Current Measure interval: @iupdate.AllValues.AvgInterval/@LocalSVC_Interval</div>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <div class="ItemColumns">
+                        <ul class="MeasureList">
+                            <li class="header">API</li>
+                            <li class="grey">@iupdate.AllValues.APICalls Calls in total</li>
+                            <li class="grey">@iupdate.TodayValues.APICalls Calls today</li>
+                        </ul>
+                    </div>
+
+                    <div class="ItemColumns">
+                        <ul class="MeasureList">
+                            <li class="header">Network</li>
+                            <li class="grey">@iupdate.AllValues.AvgNetworkUsage Average KB/Measure</li>
+                            <li class="grey">@iupdate.AllValues.HighestNetUsage Highest KB/Measure</li>
+                        </ul>
+                    </div>
+                </td>
+
+            </tr>
+            <tr>
+                <td>
+                    <div class="ItemColumns">
+                        <ul class="MeasureList">
+                            <li class="header">Disk</li>
+                            <li class="grey">@iupdate.AllValues.AvgKBPerDisk Average KB/Measure</li>
+                            <li class="grey">@iupdate.AllValues.HighestKBPerDisk Highest KB/Measure</li>
+                        </ul>
+                    </div>
+                    <div class="ItemColumns">
+                        <ul class="MeasureList">
+                            <li class="header">Database</li>
+                            <li class="grey">Longest query time: @iupdate.AllValues.LongestQuery ms</li>
+                            <li class="grey">Average query time: @iupdate.AllValues.AvgQueryLength ms</li>
+                        </ul>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </div>
+}
+
+
+@code {
+
+    BECanvasComponent CanvasTotalTimePct { get; set; }
+    BECanvasComponent CanvasTodayTimePct { get; set; }
+
+    Canvas2DContext context1 { get; set; }
+    Canvas2DContext context2 { get; set; }
+
+    protected override void OnInitialized()
+    {
+        iupdate.OnInfoChangeAsync += Refresh;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                watch.Start();
+                context1 = await CanvasTotalTimePct.CreateCanvas2DAsync();
+                context2 = await CanvasTodayTimePct.CreateCanvas2DAsync();
+                await context1.SetFillStyleAsync(COLOR.Black);
+                await context1.SetFontAsync("10pt consolas");
+
+                await context2.SetFillStyleAsync(COLOR.Black);
+                await context2.SetFontAsync("10pt consolas");
+
+                await CreateGraphPctTodayTime();
+                await CreateGraphPctTotalTime();
+                await watch.LogTime("SysInfo", "OnAfterRenderAsync", userState.CurrentUser.PropertyView("ProfilePicture"));
+            }
+            catch (Exception err)
+            {
+                await err.LogErrors("SysInfo", "OnAfterRenderAsync");
+            }
+        }
+    }
+
+    protected async Task CreateGraphPctTotalTime()
+    {
+        await context1.BeginPathAsync();
+        await context1.MoveToAsync(spaceX, spaceX);
+
+        await context1.LineToAsync(spaceX, chartHeightPct - spaceY);
+        await context1.SetFillStyleAsync(COLOR.Black);
+        await context1.FillTextAsync("CPU, Memory, Disk % (All date times)", 45, 15);
+        await context1.FillTextAsync("CPU", 50, chartHeightPct - 5);
+        await context1.FillTextAsync("RAM", 130, chartHeightPct - 5);
+        await context1.FillTextAsync("DISK", 210, chartHeightPct - 5);
+        await context1.FillTextAsync("Avg/Max", 270, chartHeightPct - 5);
+
+        for (int i = 0; i < maxDataValPct + 1; i += 10)
+        {
+            await context1.FillTextAsync(i.ToString(), 0, (chartHeightPct - spaceY) - (i * 2));
+        }
+
+        //X-Axis
+        await context1.LineToAsync(CanvasTodayTimePct.Width - 40, chartHeightPct - spaceY);
+
+        await context1.DrawBarsPctGraphs(iupdate.AllValues);
+    }
+
+    protected async Task CreateGraphPctTodayTime()
+    {
+        await context2.BeginPathAsync();
+        await context2.MoveToAsync(spaceX, spaceX);
+
+        await context2.LineToAsync(spaceX, chartHeightPct - spaceY);
+        await context2.SetFillStyleAsync(COLOR.Black);
+        await context2.FillTextAsync("CPU, Memory, Disk % (Today)", 45, 15);
+        await context2.FillTextAsync("CPU", 50, chartHeightPct - 5);
+        await context2.FillTextAsync("RAM", 130, chartHeightPct - 5);
+        await context2.FillTextAsync("DISK", 210, chartHeightPct - 5);
+        await context2.FillTextAsync("Avg/Max", 270, chartHeightPct - 5);
+
+        for (int i = 0; i < maxDataValPct + 1; i += 10)
+        {
+            await context2.FillTextAsync(i.ToString(), 0, (chartHeightPct - spaceY) - (i * 2));
+        }
+
+        //X-Axis
+        await context2.LineToAsync(CanvasTodayTimePct.Width - 40, chartHeightPct - spaceY);
+        await context2.DrawBarsPctGraphs(iupdate.TodayValues);
+    }
+
+    private async Task Refresh()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await InvokeAsync(() =>
+        {
+            iupdate.OnInfoChangeAsync -= Refresh;
+            if (context1 != null)
+            {
+                context1.Dispose();
+                context2.Dispose();
+                CanvasTodayTimePct = null;
+                CanvasTotalTimePct = null;
+            }
+        });
+    }
+}
+

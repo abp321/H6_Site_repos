@@ -1,0 +1,123 @@
+﻿@page "/Logs"
+@inject UserStateContainer userState
+@inject IJSRuntime JS
+@inject System.Diagnostics.Stopwatch watch
+@inject NavigationManager nav
+@using static H6_Site.GlobalObjects;
+@using AbpLib.Web;
+
+<div style="padding-bottom:15px;">
+    <span style="display: inline-block;">
+        <input id="Textbox1" class="DefaultTextbox" type="text" @onkeyup="async e => await KeyDown(e)" @onkeyup:preventDefault="true" placeholder="Search" @ref="TxtArea" tabindex="0" />
+    </span>
+</div>
+
+<table>
+    <tr>
+        <td>
+            <div>
+                @if (RecordSet?.Count > 0)
+                {
+                    @foreach (var n in RecordSet)
+                    {
+                        Dictionary<string, object>[] records = n.Value;
+                        string[] columns = records?.FirstOrDefault()?.Select(x => x.Key)?.ToArray();
+                        if (columns?.Length > 0)
+                        {
+                            <div style="font-family:Arial; font-weight:bold; font-size:16px; padding-bottom:10px; padding-top:10px; ">
+                                @n.Key
+                            </div>
+                            <div style="max-height:500px; overflow-y:scroll;">
+
+
+                                <table class="table table-bordered" style="font-family:Arial; font-size:11px;">
+                                    <thead>
+                                        <tr>
+                                            @for (int i = 0; i < columns.Length; i++)
+                                            {
+                                                <th scope="col">@columns[i]</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var n2 in records)
+                                        {
+                                            <tr style="cursor:text;">
+                                                @foreach (var n3 in n2)
+                                                {
+                                                    <td>@n3.Value</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+
+                            </div>
+                        }
+                    }
+                }
+            </div>
+        </td>
+    </tr>
+</table>
+
+@code {
+
+    Dictionary<string, Dictionary<string, object>[]> RecordSet;
+    ElementReference TxtArea;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!userState.CurrentUser.Admin)
+        {
+            await InvokeAsync(() => nav.NavigateTo(""));
+        }
+    }
+
+    protected async Task KeyDown(KeyboardEventArgs e)
+    {
+        bool isEnter = e.Key == "Enter";
+        if (isEnter)
+        {
+
+            try
+            {
+                watch.Start();
+                if(RecordSet == null) RecordSet = new Dictionary<string, Dictionary<string, object>[]>(StringComparer.OrdinalIgnoreCase);
+
+                string search = await JS.InvokeAsync<string>("GetControlValue", "Textbox1");
+                string logFields = typeof(LogModel).GetSqlFields();
+                string queryLogFields = typeof(XEventModel).GetSqlFields();
+                string sysEventLogFields = typeof(SysEventLogModel).GetSqlFields();
+
+                DataModel[] dataModels = new DataModel[]
+                {             
+                    new DataModel() { Fields = sysEventLogFields, SearchStmt = sysEventLogFields.GetSearchStmt(search), Table = "SysEventLog", OrderStmt = new KeyValuePair<string, string>("TimeGenerated","desc"), Limit = 100 },
+                    new DataModel() { Fields = logFields, SearchStmt = logFields.GetSearchStmt(search), Table = "Log", OrderStmt = new KeyValuePair<string, string>("CreatedDateTime","desc"), Limit = 100 },
+                    new DataModel() { Fields = queryLogFields, SearchStmt = queryLogFields.GetSearchStmt(search), Table = "QueryLog",OrderStmt = new KeyValuePair<string, string>("TimeStamp","desc"), Limit = 100 }
+                };
+
+                for (int i = 0; i < dataModels.Length; i++)
+                {
+                    DataModel m = dataModels[i];
+                    using HttpResponseMessage msg = await client.PostAsync("Data/GetData", m.SERIALIZE_CONTENT());
+                    Dictionary<string, object>[] records = await msg.DeserializeStream<Dictionary<string, object>>();
+
+                    RecordSet.AddData(m.Table, records);
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                await watch.LogTime("Logs", "KeyDown");
+            }
+            catch (Exception err)
+            {
+                await err.LogErrors("Logs", "KeyDown");
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JS.InvokeVoidAsync("Focus", "Textbox1");
+    }
+}

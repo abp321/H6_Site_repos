@@ -1,0 +1,201 @@
+﻿@page "/Profile"
+@inject NavigationManager nav
+@inject IJSRuntime JS
+@inject System.Diagnostics.Stopwatch watch
+@inject UserStateContainer userState
+@inject ItemModel item
+@using AbpLib.Web;
+@using AbpLib;
+@using System.IO;
+
+@using static GlobalObjects;
+
+@if (userState.UserLoggedIn)
+{
+<div>
+    <table style="display:inline-block;">
+        <tr>
+            <td>
+                <div class="NormalFrame">
+                    <span style="position:center;"><span class="NormalHeader">@userState.CurrentUser.UserName</span></span>
+                </div>
+                <div class="NormalFrame">
+                    <input type="image" width="120" height="120" src="data:image/jpg;base64,@userState.CurrentUser.ProfilePicture" />
+                    <div style="left:78%; position:relative;"><span class="CustFile" style="border:none; border-radius:0px;">+<InputFile OnChange="async e => await OnInput_ProfilePicture(e)" /></span></div>
+                </div>
+            </td>
+        </tr>
+    </table>
+</div>
+    <table class="table table-borderless">
+        <tr>
+            <td style="transform:scale(0.9); transform-origin:left;">
+                <div class="ItemColumns">
+                    <ul class="ProfileList">
+                        <li class="header">Personal information</li>
+
+                        <li class="grey"><div class="ProfileHeader">First Name</div><input type="text" class="NormalTextBox" @bind="@userState.CurrentUser.FirstName" /></li>
+                        <li class="grey"><div class="ProfileHeader">Last Name</div><input type="text" class="NormalTextBox" @bind="@userState.CurrentUser.LastName" /></li>
+                        <li class="grey"><div class="ProfileHeader">Email</div><input type="text" class="NormalTextBox" @bind="@userState.CurrentUser.Email" /></li>
+                        <li class="grey"><div class="ProfileHeader">Phone</div><input type="text" class="NormalTextBox" @bind="@userState.CurrentUser.Phone" /></li>
+                        <li class="grey"><a class="ItemButton" @onclick="async e => await On_Btn1Click(e)" @onclick:preventDefault="true">Update profile</a></li>
+                    </ul>
+                </div>
+                <div class="ItemColumns">
+                    <ul class="ProfileList">
+                        <li class="header">Upload new item</li>
+                        <li class="grey"><div class="ProfileHeader">Name</div><input type="text" class="NormalTextBox" style="width:60%;" @bind="item.ItemName" /></li>
+                        <li class="grey"><div class="ProfileHeader">Price</div><input type="text" class="NormalTextBox" @bind="@item.Price" /></li>
+
+                        <li class="grey"><span class="CustFile">@newPicture<InputFile OnChange="async e => await OnInput_FileUpload(e)" /></span></li>
+                    </ul>
+                </div>
+
+                @if (userState.CurrentUser.Admin)
+                {
+                <div class="ItemColumns">
+                    <ul class="ProfileList">
+                        <li class="header" style="background-image:linear-gradient(180deg, rgb(193, 55, 94) 0%, #3a0647 70%);">Local service Control Panel</li>
+                        <li class="grey">@LocalSVC_Status</li>
+                        @if (LocalSVCRunning)
+                        {
+                            <li class="grey"><input type="button" class="NormalTextBox" value="@PauseBtn_Txt" @onclick="async e => await On_Btn2Click(e)" @onclick:preventDefault="true" /></li>
+                            <li class="grey"><div class="ProfileHeader">Set interval</div><input type="text" id="Interval_TB" class="NormalTextBox" @bind="@LocalSVC_Interval" @onkeyup="async e => await On_KeyUp(e)" @onkeyup:preventDefault="true" /></li>
+                        }
+                    </ul>
+                </div>
+                }
+
+            </td>
+        </tr>
+    </table>
+    <div>
+        <span style="float:left;"><input type="text" readonly="readonly" class="InfoText" id="ProfileInfo" /></span>
+    </div>
+}
+
+@code {
+
+    string newPicture => userState.CurrentUser.Admin ? "Upload Item" : "Request Item";
+    string PauseBtn_Txt => LoggingIsPaused ? "Resume" : "Pause";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!userState.UserLoggedIn)
+            {
+                await InvokeAsync(() => nav.NavigateTo(""));
+            }
+        }
+        catch (Exception err)
+        {
+            await err.LogErrors("Profile", "OnInitializedAsync");
+        }
+    }
+
+    protected async Task On_Btn1Click(MouseEventArgs e)
+    {
+        try
+        {
+            watch.Start();
+            await client.PostAsync("Data/UserUpdate", userState.CurrentUser.SERIALIZE_CONTENT());
+
+            await watch.LogTime("Profile", "On_Btn1Click");
+
+            JS.InfoMsg("ProfileInfo", "User information has been updated");
+        }
+        catch (Exception err)
+        {
+            JS.InfoMsg("ProfileInfo", err.Message);
+            await err.LogErrors("Profile", "On_Btn1Click");
+        }
+    }
+
+    protected async Task On_Btn2Click(MouseEventArgs e)
+    {
+        LoggingIsPaused = !LoggingIsPaused;
+        LocalSVCRunning = await "pause_logging".ContactLocalSVC(LoggingIsPaused.ToString());
+    }
+
+    protected async Task On_KeyUp(KeyboardEventArgs e)
+    {
+        string time_value = await JS.InvokeAsync<string>("GetControlValue", "Interval_TB");
+        if (int.TryParse(time_value, out int val) && val >= 100)
+        {
+            LocalSVCRunning = await "set_interval".ContactLocalSVC(val.ToString());
+            LocalSVC_Interval = val;
+        }
+    }
+
+    private async Task OnInput_ProfilePicture(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            watch.Start();
+            using Stream s = e.File.OpenReadStream();
+            byte[] bytes = await s.GetBytes();
+
+            if (bytes.Length > 0)
+            {
+                await client.PostAsync($"Data/UploadFile/{e.File.Name}/{userState.CurrentUser.UserName}/Profile_Picture", new ByteArrayContent(bytes));
+                userState.CurrentUser.ProfilePicture = Convert.ToBase64String(bytes);
+                JS.InfoMsg("ProfileInfo", $"Profile picture has been updated with: {e.File.Name}");
+            }
+
+            await watch.LogTime("Profile", "OnInput_FileUpload", userState.CurrentUser.PropertyView("ProfilePicture"));
+        }
+        catch (Exception err)
+        {
+            await err.LogErrors("Profile", "OnInputFileChange");
+        }
+    }
+
+    private async Task OnInput_FileUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            watch.Start();
+            using Stream s = e.File.OpenReadStream();
+            byte[] bytes = await s.GetBytes();
+
+            if (bytes.Length > 0 && !string.IsNullOrEmpty(item.ItemName) && item.Price != 0)
+            {
+                HttpResponseMessage msg = await client.PostAsync($"Data/UploadFile/{e.File.Name}/{userState.CurrentUser.UserName}/New_Picture", new ByteArrayContent(bytes));
+
+                if (int.TryParse(await msg.Content.ReadAsStringAsync(), out int fileId))
+                {
+
+                    if (fileId > 0)
+                    {
+                        msg = await client.PostAsync($"Data/UpdateItemDetails/{fileId}", item.SERIALIZE_CONTENT());
+                        JS.InfoMsg("ProfileInfo", $"{e.File.Name} has been uploaded with the price of {item.Price} DKK");
+                    }
+                    else
+                    {
+
+                        switch(fileId)
+                        {
+                            case -1:
+                                JS.InfoMsg("ProfileInfo", "Profile picture was updated");
+                                break;
+                            case -2:
+                                JS.InfoMsg("ProfileInfo", "File already exists");
+                                break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                JS.InfoMsg("ProfileInfo", "Upload Failed, check price and name input");
+            }
+
+            await watch.LogTime("Profile", "OnInput_FileUpload");
+        }
+        catch (Exception err)
+        {
+            await err.LogErrors("Profile", "OnInputFileChange");
+        }
+    }
+}

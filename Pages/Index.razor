@@ -1,0 +1,68 @@
+﻿@page "/"
+@inject NavigationManager nav
+@inject UserStateContainer userState
+@using static H6_Site.GlobalObjects;
+@using AbpLib.Web;
+
+<h2>Welcome to MaxiToys</h2>
+
+@if (Items != null)
+{
+    @foreach (ItemModel item in Items)
+    {
+        <div class="ItemColumns">
+            <ul class="price">
+                <li class="header">@item.ItemName</li>
+                <li class="grey">@item.Price DKK</li>
+                <li style="resize: both; overflow:auto; background-color:#8862b70f;"> <img width="340" height="340" src="data:image/jpg;base64,@item.StoredFile" /></li>
+                @if (userState.UserLoggedIn)
+                {
+                    @if (userState.CurrentUser.Admin)
+                    {
+                        <li class="grey">
+                            <span style="padding-left:80px;"><a class="ItemButton" @onclick="async e=> await On_BasketAdd(item,e)">Add to basket</a></span>
+                            <span style="float:right;transform:scale(0.65); transform-origin:top right;display:inline-block;">
+                                <input type="button" class="btn-danger" value="Remove" @onclick="async e => await On_Btn1Click(item, e)" @onclick:preventDefault="true" />
+                            </span>
+                        </li>
+                    }
+                    else
+                    {
+                        <li class="grey">
+                            <span><a class="ItemButton" @onclick="async e => await On_BasketAdd(item,e)">Add to basket</a></span>
+                        </li>
+                    }
+                }
+            </ul>
+        </div>
+    }
+}
+
+@code
+{
+    List<ItemModel> Items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        string result = await client.GetStringAsync("Data/GetItems");
+        Items = result.DESERIALIZE<List<ItemModel>>();
+    }
+
+    protected async Task On_Btn1Click(object sender, MouseEventArgs e)
+    {
+        ItemModel m = (ItemModel)sender;
+        await client.PostAsync("Validation/RemoveItem", m.SERIALIZE_CONTENT());
+
+        string result = await client.GetStringAsync("Data/GetItems");
+        Items = result.DESERIALIZE<List<ItemModel>>();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected async Task On_BasketAdd(object sender, MouseEventArgs e)
+    {
+        ItemModel m = (ItemModel)sender;
+        userState.BasketList.Add(m);
+        userState.SetUser(userState.CurrentUser);
+        await InvokeAsync(StateHasChanged);
+    }
+}
